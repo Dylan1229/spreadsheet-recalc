@@ -145,6 +145,10 @@ These rules are the definition; where Excel differs or is unclear, this plugin c
   last value).
 - Arithmetic is exact (no 15-digit floating point): `ROUND(2.345,2)` is 2.35, and `0.1+0.2=0.3` is TRUE.
 - Text comparison is by lower-case code point, not Excel's locale collation (the data compares letters only).
+- Text never becomes a number: `'12 + 1` is `#VALUE!` (Excel converts numeric-looking text and gives 13).
+- Only the twelve listed functions exist: any other name is `#NAME?`, even one Excel has, such as `SQRT`.
+- A range outside `SUM`, `AVERAGE`, `MIN`, `MAX` and `COUNT` is `#VALUE!` (Excel may take one cell of it by implicit
+  intersection, or spill it).
 
 ## Data
 
