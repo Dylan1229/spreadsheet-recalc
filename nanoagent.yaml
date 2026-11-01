@@ -1,0 +1,71 @@
+_ > nanoagent.plugin.v0001.ManifestConfig:
+id: spreadsheet-recalc
+name: Spreadsheet Recalc
+version: 0.1.0
+status: ready
+spec: nanoagent.plugin/v0001
+
+runtime > nanoagent.plugin.v0001.RuntimeConfig:
+  type: mcp_stdio
+  command: [uv, run, --frozen, python, -m, plugin]
+
+permissions > nanoagent.plugin.v0001.PermissionsConfig:
+  network > nanoagent.plugin.v0001.NetworkConfig:
+    hosts: []
+  filesystem > nanoagent.plugin.v0001.FilesystemConfig:
+    write: [workspace]
+
+# One entry per contract.Tool; its input and output classes are contract.TOOLS's.
+tools > dict[contract.Tool, nanoagent.plugin.v0001.ToolConfig]:
+  list_workbooks:
+    description: List the bundled fictional workbooks, each with its id, title, used range and number of non-empty cells
+  get_sheet:
+    description: >-
+      Every non-empty cell of one workbook as {cell, content}, row by row, left to right; a cell not listed is
+      empty. content is as typed: = starts a formula; a leading ' marks text ('12 is the text 12); TRUE and FALSE
+      are booleans; a decimal such as 12, -3.5 or 0.125 is a number; anything else is text.
+  save_values:
+    description: >-
+      Save the values of a recalc task as values/<workbook>-<digest>.json in the workspace (saving again replaces
+      it) and return them with that path: submit exactly what it returns. It checks their shape only (one value per
+      target, in target order; number finite and 0 unless kind is number; text empty for number and empty, TRUE or
+      FALSE for boolean, an error code for error) and computes nothing.
+  pin_values:
+    description: >-
+      The answer key, never an agent's tool: evaluates the workbook exactly (fractions, the static circular
+      reference rule) and gives each target's value with its exact number, the workbook's cycle cells and the
+      sha256 of the bundled data.
+
+# One entry per contract.Task; its input and output classes are contract.TASKS's.
+tasks > dict[contract.Task, nanoagent.plugin.v0001.TaskConfig]:
+  recalc-cells:
+    description: Compute the values of some cells of a small bundled spreadsheet under precisely stated rules
+    runner: agent
+    tools: [list_workbooks, get_sheet, save_values]
+    reference: pin_values
+    instructions: |-
+      You have 6 turns; this plan uses 3 and leaves the rest spare. Think briefly: one short line per cell you evaluate, no prose.
+      Turn 1: get_sheet(workbook). Do not call list_workbooks.
+      Turn 2: work out each target's value by the rules below, then call save_values with workbook and targets exactly as given and values: one {cell, kind, number, text} per target, in target order.
+      Turn 3: submit exactly what save_values returned, path included. If save_values refused, fix what it says, save again, then submit.
+
+      Cells. A content starting with = is a formula; a leading ' marks text ('12 is the text 12); TRUE and FALSE are booleans; a decimal (12, -3.5) is a number; anything else is text. A cell not listed is empty. A formula's value is its result, except that a result that is an empty cell gives the number 0: only an unlisted cell is empty.
+      Report each target as: number -> kind number, number = the value (at least 8 significant figures; accepted within 1e-6 x max(1, |exact|)), text ""; text -> kind text, number 0, text = the text exactly; boolean -> kind boolean, number 0, text TRUE or FALSE; error -> kind error, number 0, text = the code (#DIV/0!, #VALUE!, #NAME?, #NUM!, #CIRC!); empty -> kind empty, number 0, text "".
+      Operators, highest precedence first: unary - and + (they bind tighter than ^: -2^2 = 4); ^; * and /; + and -; comparisons = <> < <= > >=. Every binary operator groups left to right: 2^3^2 = 64, 10-4-3 = 3, 1<2<3 is (1<2)<3. Arithmetic is exact (1/3 stays 1/3).
+      Arithmetic operators, unary ones too, coerce each operand: empty -> 0, TRUE -> 1, FALSE -> 0, text -> #VALUE! (even numeric-looking text such as '12). x/0 -> #DIV/0!. x^y: y must be a whole number, else #NUM! (2^0.5 is #NUM!); 0^0 -> #NUM!; 0^(negative) -> #DIV/0!.
+      Comparisons give TRUE or FALSE: numbers by value; texts ignoring case ("b" > "Apple"); FALSE < TRUE; across kinds number < text < boolean; an empty operand counts as 0, "" or FALSE to match the other side (two empties are equal).
+      Errors: operands and arguments are evaluated left to right, each coerced as it is evaluated; the first error met (an error value, or a coercion that fails) is the result. Only an IF branch not taken and IFERROR escape this.
+      Functions (any other function, and any bare name that is not TRUE, FALSE or a cell, gives #NAME?; a wrong number of arguments gives #VALUE!, checked before any argument is evaluated):
+      - SUM, AVERAGE, MIN, MAX, COUNT (1 or more arguments): an argument that is a range (A1:C3) or a cell reference (B4) counts only the numbers in its cells, by row then column; text, booleans and empty cells there are skipped, an error there is the result. Any other argument (a literal or an expression) is coerced like an operand and counts. AVERAGE with no numbers -> #DIV/0!; MIN and MAX with no numbers -> 0; COUNT counts the numbers.
+      - ROUND(x, digits): half away from zero; digits is truncated toward zero to a whole number and may be negative: ROUND(-2.5,0) = -3, ROUND(7.245,2) = 7.25 (numbers are exact decimals, so that is a true half), ROUND(1234.5,-2) = 1200.
+      - ABS(x). AND(...), OR(...) (1 or more arguments), NOT(x): each argument becomes a boolean (a number is TRUE unless 0; empty is FALSE; text is #VALUE!), every argument is evaluated.
+      - IF(cond, then[, else]): cond becomes a boolean as for AND; only the chosen branch is evaluated; with no else a false cond gives FALSE.
+      - IFERROR(value, alternative): alternative if value is an error, else value.
+      A range anywhere but as an argument of SUM, AVERAGE, MIN, MAX or COUNT is #VALUE!.
+      Circular references are decided before evaluating: draw an arrow from each formula cell to every cell its formula mentions (ranges expanded, both IF branches, IFERROR's arguments). Every cell that can follow arrows back to itself, a self-reference included, is #CIRC!, even if the arrow is in an IF branch not taken. Other cells evaluate normally: mentioning a #CIRC! cell yields #CIRC! like any error, which IFERROR catches.
+  get-sheet:
+    description: Show every non-empty cell of a bundled workbook with its content as typed
+    runner: tool
+    tools: [get_sheet]
+    reference: null
+    instructions: Return every non-empty cell of the workbook with its content as typed, row by row, left to right.

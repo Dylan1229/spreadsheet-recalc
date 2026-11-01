@@ -1,0 +1,7 @@
+/* Styles for this plugin's renderers (renderers.js), over the kit's (kit/kit.css). They apply only inside
+   each renderer's output, in its own shadow root, and use only the kit's variables, so they follow the
+   host's light and dark themes. */
+
+.recalc { display: grid; gap: 8px; min-width: 0; }
+.recalc code { color: var(--text); overflow-wrap: anywhere; }
+.recalc-path { display: flex; align-items: center; gap: 6px; font-size: 12.5px; overflow-wrap: anywhere; }
